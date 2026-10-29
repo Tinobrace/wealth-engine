@@ -720,3 +720,11 @@ table.cf tr.r-cat td.col-label      { font-size: 10px; font-weight: 700; text-tr
 
 /* ── Charts ──────────────────────────────────────────────── */
 canvas { max-width: 100%; }
+
+@media (max-width: 640px) {
+  .actual-entry-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .actual-note-field { grid-column: 1 / -1; }
+  .actual-entry-form > .actual-submit { min-height: 44px; }
+  .theme-toggle { width: 44px; height: 44px; }
+  .hdr-r .btn-sm { min-height: 44px; }
+}
