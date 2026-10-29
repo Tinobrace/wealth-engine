@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Wealth Engine fictional demo dashboard for exploring income, debt, and savings plans.">
+  <meta name="theme-color" content="#1A252F">
+  <title>Wealth Engine — Sample Plan</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+
+  <!-- Fonts (Google Fonts CDN) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Chart.js (pinned version — do not change without testing) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────── -->
+<header class="hdr">
+  <div class="hdr-bar"></div>
+  <div>
+    <div class="hdr-t">Wealth Engine</div>
+    <div class="hdr-s" id="forecast-subtitle">Illustrative sample plan · 5-year forecast</div>
+  </div>
+  <div class="hdr-r">
+    <span id="account-status" class="account-status">Sample-only demo</span>
+    <button id="account-open" class="btn-sm" type="button">Sign in</button>
+    <button id="account-sign-out" class="btn-sm" type="button" hidden>Sign out</button>
+    <button id="theme-toggle" class="btn-sm theme-toggle" type="button" aria-label="Switch color theme" aria-pressed="false"></button>
+  </div>
+</header>
+
+<dialog id="account-dialog" class="account-dialog" aria-labelledby="account-dialog-title">
+  <form id="account-form" class="account-form">
+    <div class="card-head">
+      <h2 id="account-dialog-title">Your private plan</h2>
+      <button id="account-close" class="account-close" type="button" aria-label="Close sign-in">×</button>
+    </div>
+    <p class="inp-note">Sign in to save your plan, actuals, debts, and savings goals privately to your account. The sample demo remains read-only.</p>
+    <div class="field">
+      <label for="account-email">Email</label>
+      <input id="account-email" class="text-input" type="email" autocomplete="email" required maxlength="254">
+    </div>
+    <div class="field">
+      <label for="account-password">Password</label>
+      <input id="account-password" class="text-input" type="password" autocomplete="current-password" required minlength="8" maxlength="256">
+    </div>
+    <div class="account-actions">
+      <button id="account-login" class="btn-secondary" type="submit">Sign in</button>
+      <button id="account-sign-up" class="btn-secondary" type="button">Create account</button>
+    </div>
+    <p id="account-form-status" class="inp-note" role="status" aria-live="polite"></p>
+  </form>
+</dialog>
+
+<!-- ── TABS ───────────────────────────────────────────── -->
+<nav class="tabs" role="tablist" aria-label="Primary navigation">
+  <button id="tab-button-overview" class="tab on" type="button" role="tab" aria-controls="tab-overview" aria-selected="true" tabindex="0" data-tab="overview">📊 Overview</button>
+  <button id="tab-button-cashflow" class="tab" type="button" role="tab" aria-controls="tab-cashflow" aria-selected="false" tabindex="-1" data-tab="cashflow">📅 Cash Flow</button>
+  <button id="tab-button-actuals" class="tab" type="button" role="tab" aria-controls="tab-actuals" aria-selected="false" tabindex="-1" data-tab="actuals">🧾 Actuals</button>
+  <button id="tab-button-debts" class="tab" type="button" role="tab" aria-controls="tab-debts" aria-selected="false" tabindex="-1" data-tab="debts">💳 Debts</button>
+  <button id="tab-button-savings" class="tab" type="button" role="tab" aria-controls="tab-savings" aria-selected="false" tabindex="-1" data-tab="savings">🏡 Savings</button>
+  <button id="tab-button-inputs" class="tab" type="button" role="tab" aria-controls="tab-inputs" aria-selected="false" tabindex="-1" data-tab="inputs">⚙️ Edit Inputs</button>
+</nav>
+
+<div class="quickbar" aria-label="Quick planning actions">
+  <div class="quickbar__label">Quick actions</div>
+  <div class="quickbar__actions">
+    <button id="quick-save-plan" class="btn-secondary" type="button">Save current</button>
+    <button id="quick-export-plan" class="btn-secondary" type="button">Export plan</button>
+    <button id="quick-export-csv" class="btn-secondary" type="button">Export CSV</button>
+    <button id="quick-print-summary" class="btn-secondary" type="button">Print summary</button>
+    <button id="quick-reset-plan" class="btn-secondary" type="button">Reset plan</button>
+  </div>
+</div>
+<p class="privacy-notice" role="note">
+  <strong id="privacy-notice-title">Read-only sample demo:</strong> All displayed names and financial figures are fictional. To create and save your own private plan, sign in. Sample data is separate from account data.
+</p>
+
+<!-- ── MAIN CONTENT ───────────────────────────────────── -->
+<main class="page">
+
+  <!-- OVERVIEW TAB -->
+  <section class="panel on" id="tab-overview" role="tabpanel" aria-labelledby="tab-button-overview" tabindex="0">
+    <div id="plan-summary" class="plan-summary" aria-live="polite"></div>
+    <div id="cash-risk" class="cash-risk" aria-live="polite"></div>
+    <div id="kpi-grid" class="kpi-grid"></div>
+    <div id="alert-row" class="alert-row"></div>
+    <div id="insights-grid" class="insights-grid" aria-live="polite"></div>
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Monthly Net Surplus / Deficit</div>
+      <div class="card-body"><canvas id="chart-net" height="180" role="img" aria-label="Bar chart of monthly net surplus or deficit"></canvas></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head"><div class="card-head-icon"></div>Lowest Cash Balance Each Month</div>
+        <div class="card-body"><canvas id="chart-cum" height="180" role="img" aria-label="Line chart of lowest projected cash balance during each month"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-head-icon"></div>Expense Breakdown (Full Period)</div>
+        <div class="card-body"><canvas id="chart-pie" height="180" role="img" aria-label="Doughnut chart of full-period expenses and surplus by category"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CASH FLOW TAB -->
+  <section class="panel" id="tab-cashflow" role="tabpanel" aria-labelledby="tab-button-cashflow" tabindex="0">
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Category visibility</div>
+      <div class="card-body">
+        <div id="cashflow-filters" class="category-filters"></div>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table class="cf" id="cf-table"></table>
+    </div>
+  </section>
+
+  <!-- ACTUALS TAB -->
+  <section class="panel" id="tab-actuals" role="tabpanel" aria-labelledby="tab-button-actuals" tabindex="0">
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Actuals vs. plan</div>
+      <div class="card-body">
+        <p class="inp-note">Log income and expenses as they happen. Actual entries are saved to your private account and compared with the selected month's plan.</p>
+        <div class="field actuals-month-field">
+          <label for="actuals-month">Month</label>
+          <input id="actuals-month" class="text-input" type="month">
+        </div>
+        <div id="actuals-summary" class="actuals-summary" aria-live="polite"></div>
+        <p id="actuals-period-note" class="inp-note"></p>
+        <div class="tbl-wrap actuals-comparison-wrap">
+          <table class="actuals-table" id="actuals-comparison"></table>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Record what happened</div>
+      <div class="card-body">
+        <form id="actual-entry-form" class="actual-entry-form">
+          <div class="field">
+            <label for="actual-date">Date</label>
+            <input id="actual-date" class="text-input" type="date" required>
+          </div>
+          <div class="field">
+            <label for="actual-type">Type</label>
+            <select id="actual-type" class="select-input">
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="actual-category">Category</label>
+            <select id="actual-category" class="select-input" required></select>
+          </div>
+          <div class="field">
+            <label for="actual-amount">Amount (₦)</label>
+            <input id="actual-amount" class="text-input" type="number" min="1" step="1" required>
+          </div>
+          <div class="field actual-note-field">
+            <label for="actual-note">Note (optional)</label>
+            <input id="actual-note" class="text-input" type="text" maxlength="120" placeholder="e.g. salary arrived late">
+          </div>
+          <button class="btn-secondary actual-submit" type="submit">Add actual</button>
+        </form>
+        <div id="actuals-entries" class="actuals-entries" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEBTS TAB -->
+  <section class="panel" id="tab-debts" role="tabpanel" aria-labelledby="tab-button-debts" tabindex="0">
+    <div class="debt-list" id="debt-list"></div>
+    <div id="private-debt-form-card" class="card private-entry-card" hidden>
+      <div class="card-head"><div class="card-head-icon"></div>Add a private debt</div>
+      <div class="card-body">
+        <p class="inp-note">Enter your current balance, annual interest rate, monthly payment, and usual due day. Scheduled payments are included in your private cash-flow forecast.</p>
+        <form id="private-debt-form" class="private-entry-form">
+          <label class="field">Debt name<input class="text-input" name="name" type="text" maxlength="80" required></label>
+          <label class="field">Current balance (₦)<input class="text-input" name="balance" type="number" min="0" max="1000000000000" step="1" required></label>
+          <label class="field">Annual interest rate (%)<input class="text-input" name="annual_interest_rate" type="number" min="0" max="100" step="0.01" value="0" required></label>
+          <label class="field">Monthly payment (₦)<input class="text-input" name="monthly_payment" type="number" min="0" max="1000000000000" step="1" value="0" required></label>
+          <label class="field">Due day (1–31)<input class="text-input" name="due_day" type="number" min="1" max="31" step="1" value="1" required></label>
+          <button class="btn-secondary" type="submit">Add debt</button>
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div><span id="debt-chart-title">Sample Loan Balance Paydown · 5-year forecast</span></div>
+      <div class="card-body">
+        <p id="debt-chart-empty-state" class="account-feature-empty" hidden>Add a private debt to see its estimated balance over time. Interest and payments are estimates; verify lender terms.</p>
+        <canvas id="chart-debts" height="200" role="img" aria-label="Line chart of projected sample Loan A and Loan B balances by month"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- SAVINGS TAB -->
+  <section class="panel" id="tab-savings" role="tabpanel" aria-labelledby="tab-button-savings" tabindex="0">
+    <div class="debt-list" id="savings-list"></div>
+    <div id="private-savings-form-card" class="card private-entry-card" hidden>
+      <div class="card-head"><div class="card-head-icon"></div>Add a private savings goal</div>
+      <div class="card-body">
+        <p class="inp-note">Set your target, current savings, monthly contribution, and contribution day. Contributions are included in your private cash-flow forecast.</p>
+        <form id="private-savings-form" class="private-entry-form">
+          <label class="field">Goal name<input class="text-input" name="name" type="text" maxlength="80" required></label>
+          <label class="field">Target amount (₦)<input class="text-input" name="target_amount" type="number" min="1" max="1000000000000" step="1" required></label>
+          <label class="field">Already saved (₦)<input class="text-input" name="saved_amount" type="number" min="0" max="1000000000000" step="1" value="0" required></label>
+          <label class="field">Monthly contribution (₦)<input class="text-input" name="monthly_contribution" type="number" min="0" max="1000000000000" step="1" value="0" required></label>
+          <label class="field">Contribution day (1–31)<input class="text-input" name="contribution_day" type="number" min="1" max="31" step="1" value="1" required></label>
+          <button class="btn-secondary" type="submit">Add savings goal</button>
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div><span id="savings-chart-title">Savings Accumulation · Sample Goals</span></div>
+      <div class="card-body">
+        <p id="savings-chart-empty-state" class="account-feature-empty" hidden>Add a private savings goal to see projected contributions.</p>
+        <canvas id="chart-savings" height="200" role="img" aria-label="Line chart of monthly and combined savings accumulation"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- INPUTS TAB -->
+  <section class="panel" id="tab-inputs" role="tabpanel" aria-labelledby="tab-button-inputs" tabindex="0">
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Plan controls</div>
+      <div class="card-body">
+        <div class="scenario-grid">
+          <div class="field">
+            <label>Saved scenario</label>
+            <select id="scenario-select" class="select-input"></select>
+          </div>
+          <div class="field">
+            <label>Save as</label>
+            <input id="new-scenario-name" class="text-input" type="text" placeholder="Rent focus" maxlength="32">
+          </div>
+        </div>
+        <div class="card-actions" style="margin-top:12px; margin-bottom:0;">
+          <div class="card-actions__buttons">
+            <button id="save-scenario" class="btn-secondary" type="button">Save scenario</button>
+            <button id="apply-scenario" class="btn-secondary" type="button">Apply</button>
+            <button id="delete-scenario" class="btn-secondary" type="button">Delete</button>
+            <button id="print-summary" class="btn-secondary" type="button">Print summary</button>
+            <button id="export-csv" class="btn-secondary" type="button">Export CSV</button>
+            <button id="save-plan" class="btn-secondary" type="button">Save current</button>
+            <button id="export-plan" class="btn-secondary" type="button">Export plan</button>
+            <button id="reset-plan" class="btn-secondary" type="button">Reset plan</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Income</div>
+      <div class="card-body">
+        <div class="inp-grid">
+          <div class="field">
+            <label>Base Salary (Net)</label>
+            <input type="number" id="inp-salary" oninput="recompute()">
+          </div>
+          <div class="field">
+            <label>COLA / Allowances</label>
+            <input type="number" id="inp-cola" oninput="recompute()">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Cash timing</div>
+      <div class="card-body">
+        <p class="inp-note">Enter cash available at the start of the first forecast month and the usual payday. Payday and due days repeat monthly; days beyond a month's final day fall on that month's last day.</p>
+        <div class="inp-grid">
+          <div class="field">
+            <label for="inp-opening-balance">Starting available cash</label>
+            <input type="number" id="inp-opening-balance" step="1000" oninput="recompute()">
+          </div>
+          <div class="field">
+            <label for="inp-payday">Salary payday (day 1–31)</label>
+            <input type="number" id="inp-payday" min="1" max="31" step="1" oninput="recompute()">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Category manager</div>
+      <div class="card-body">
+        <div class="scenario-grid">
+          <div class="field">
+            <label>New category</label>
+            <input id="new-category-name" class="text-input" type="text" placeholder="Vacation fund" maxlength="32">
+          </div>
+          <div class="field">
+            <label>Remove category</label>
+            <select id="category-select" class="select-input"></select>
+          </div>
+        </div>
+        <div class="card-actions" style="margin-top:12px; margin-bottom:0;">
+          <div class="card-actions__buttons">
+            <button id="add-category" class="btn-secondary" type="button">Add category</button>
+            <button id="remove-category" class="btn-secondary" type="button">Remove selected</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-head-icon"></div>Fixed Monthly Expenses</div>
+      <div class="card-body">
+        <p class="inp-note">These amounts apply every month. Set the day each payment leaves your account to estimate your lowest cash point.</p>
+        <div class="inp-grid" id="fixed-inputs"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-head-icon"></div>
+        <span>Variable Expenses — Update by month</span>
+      </div>
+      <div class="card-body">
+        <div class="card-actions">
+          <p class="inp-note">The forecast spans five years from the current month. Salary and fixed expenses repeat monthly; variable amounts apply only to the months entered, and blank future months are treated as zero. Edit amounts by month and set the usual payment day.</p>
+        </div>
+        <div id="var-inputs"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app-footer">Built by Uchenna Valentine Ukah</footer>
+<div id="action-toast" class="action-toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ── APP LOGIC (ES Module) ──────────────────────────── -->
+<script type="module" src="js/app.js"></script>
+
+</body>
+</html>

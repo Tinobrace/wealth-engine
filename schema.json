@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Wealth Engine — Data Schema",
+  "description": "Documents the shape of all configurable data in js/data.js. Not loaded at runtime — reference only for IDE autocompletion / validation.",
+
+  "definitions": {
+
+    "MonthLabel": {
+      "type": "string",
+      "pattern": "^[A-Z][a-z]{2} \\d{4}$",
+      "examples": ["Oct 2026", "Nov 2026", "Oct 2030"],
+      "description": "Display label for one month, generated from the current month through the forecast horizon."
+    },
+
+    "NairaAmount": {
+      "type": "number",
+      "minimum": 0,
+      "description": "A Nigerian Naira (₦) amount. Always a non-negative integer."
+    },
+
+    "MonthlyArray": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/NairaAmount" },
+      "description": "One value per plan month (length must equal MONTHS.length). 0 = no payment that month."
+    },
+
+    "Income": {
+      "type": "object",
+      "required": ["salary", "cola"],
+      "properties": {
+        "salary": {
+          "$ref": "#/definitions/NairaAmount",
+          "description": "Monthly net salary after tax and pension deductions."
+        },
+        "cola": {
+          "$ref": "#/definitions/NairaAmount",
+          "description": "Illustrative monthly allowance, in addition to net salary."
+        }
+      }
+    },
+
+    "FixedExpenseEntry": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": [
+        { "type": "string", "description": "Display label shown in the UI and cash flow table." },
+        { "$ref": "#/definitions/NairaAmount", "description": "Default monthly amount. User can override in the Edit Inputs tab." }
+      ],
+      "description": "Tuple: [display_label, default_naira_amount]"
+    },
+
+    "VariableExpenses": {
+      "type": "object",
+      "description": "Each key is a named expense stream; each value is a MonthlyArray.",
+      "properties": {
+        "loan_bundle":     { "$ref": "#/definitions/MonthlyArray", "description": "Combined monthly repayment for the two sample loans." },
+        "short_term_loan": { "$ref": "#/definitions/MonthlyArray", "description": "Sample short-term loan repayment schedule." },
+        "savings_goal_1":  { "$ref": "#/definitions/MonthlyArray", "description": "Contribution schedule for sample savings goal 1." },
+        "savings_goal_2":  { "$ref": "#/definitions/MonthlyArray", "description": "Contribution schedule for sample savings goal 2." },
+        "community_pool":  { "$ref": "#/definitions/MonthlyArray", "description": "Sample community savings pool contributions." },
+        "family_support":  { "$ref": "#/definitions/MonthlyArray", "description": "Sample family support schedule." },
+        "home_project":    { "$ref": "#/definitions/MonthlyArray", "description": "Sample home-project payment schedule." }
+      },
+      "additionalProperties": { "$ref": "#/definitions/MonthlyArray" }
+    },
+
+    "DebtStatus": {
+      "type": "string",
+      "enum": ["active", "negotiating", "settled"],
+      "description": "active = being repaid normally; negotiating = settlement under review; settled = cleared."
+    },
+
+    "Debt": {
+      "type": "object",
+      "required": ["name", "balance", "opening", "rate_pa", "monthly", "end", "status"],
+      "properties": {
+        "name":    { "type": "string", "description": "Display name of the lender / loan." },
+        "balance": { "$ref": "#/definitions/NairaAmount", "description": "Current outstanding balance (update as payments are made)." },
+        "opening": { "$ref": "#/definitions/NairaAmount", "description": "Opening balance at the start of the plan (used for progress bar denominator)." },
+        "rate_pa": { "type": "number", "minimum": 0, "description": "Annual interest rate in percent. 0 for flat-fee or informal debts." },
+        "monthly": { "$ref": "#/definitions/NairaAmount", "description": "Scheduled monthly repayment. 0 if lump-sum or under negotiation." },
+        "end":     { "type": "string", "description": "Expected payoff date or status string (e.g. 'Nov 2027', 'Pending')." },
+        "status":  { "$ref": "#/definitions/DebtStatus" },
+        "note":    { "type": "string", "description": "Free-text note shown on the debt card." }
+      }
+    },
+
+    "SavingsGoalColor": {
+      "type": "string",
+      "enum": ["teal", "gold", "red"],
+      "description": "Theme colour key used for the savings card accent and progress bar."
+    },
+
+    "SavingsGoal": {
+      "type": "object",
+      "required": ["name", "key", "target", "purpose", "deadline", "color"],
+      "properties": {
+        "name":     { "type": "string" },
+        "key":      {
+          "type": "string",
+          "description": "Key into VARIABLE, or '__rent__' to sum savings_goal_1 + savings_goal_2."
+        },
+        "target":   { "$ref": "#/definitions/NairaAmount", "description": "Target accumulation amount in Naira." },
+        "purpose":  { "type": "string", "description": "Short description of what this savings goal is for." },
+        "deadline": { "type": "string", "description": "Target completion date (display only, e.g. 'Aug 2027')." },
+        "color":    { "$ref": "#/definitions/SavingsGoalColor" }
+      }
+    },
+
+    "BrandPalette": {
+      "type": "object",
+      "description": "Hex colour values used by Chart.js datasets. CSS variables for UI elements are in style.css :root.",
+      "properties": {
+        "red":   { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "redD":  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "gold":  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "teal":  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "navy":  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "grey":  { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+      }
+    }
+
+  },
+
+  "type": "object",
+  "properties": {
+    "FORECAST_YEARS": { "type": "integer", "minimum": 1, "description": "Number of years in the rolling forecast horizon." },
+    "MONTHS":       { "type": "array",  "items": { "$ref": "#/definitions/MonthLabel" }, "description": "Ordered month labels generated from the current month and forecast horizon." },
+    "NM":           { "type": "integer","description": "Derived from MONTHS.length. Do not edit manually." },
+    "INCOME":       { "$ref": "#/definitions/Income" },
+    "OPENING_BALANCE": {
+      "type": "number",
+      "description": "Illustrative available cash at the start of the first forecast month; may be negative if already overdrawn."
+    },
+    "PAYDAY": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 31,
+      "description": "Usual monthly salary payment day; days beyond a month's end use that month's last day."
+    },
+    "FIXED_DEF":    { "type": "object", "additionalProperties": { "$ref": "#/definitions/FixedExpenseEntry" }, "description": "Fixed monthly expenses. Keys are camelCase slugs used as DOM input IDs." },
+    "FIXED_DUE_DAYS": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 31 },
+      "description": "Usual monthly due day for each fixed expense. Days beyond a month's end use that month's last day."
+    },
+    "VARIABLE":     { "$ref": "#/definitions/VariableExpenses" },
+    "VARIABLE_DUE_DAYS": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 31 },
+      "description": "Usual monthly due day for each variable expense stream. Days beyond a month's end use that month's last day."
+    },
+    "DEBTS":        { "type": "array",  "items": { "$ref": "#/definitions/Debt" } },
+    "SAVINGS_GOALS":{ "type": "array",  "items": { "$ref": "#/definitions/SavingsGoal" } },
+    "BRAND":        { "$ref": "#/definitions/BrandPalette" }
+  }
+}
