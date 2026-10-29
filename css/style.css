@@ -103,6 +103,13 @@ body {
   padding-right: max(0px, env(safe-area-inset-right, 0px));
   padding-block: 0;
 }
+.auth-required .tabs,
+.auth-required .quickbar,
+.auth-required .privacy-notice,
+.auth-required .app-footer,
+.auth-required .page > .panel { display: none !important; }
+.auth-required .page { max-width: 560px; min-height: calc(100vh - 56px); display: grid; align-content: center; }
+body:not(.auth-required) #login-gate { display: none; }
 
 /* ── Header ─────────────────────────────────────────────── */
 .hdr {
@@ -390,7 +397,6 @@ button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity:
   .card-head { padding: 12px 14px; }
   .card-body { padding: 14px; }
   .cash-risk { padding: 14px; }
-  .cash-risk__table { min-width: 520px; }
   .inp-grid, .scenario-grid { grid-template-columns: 1fr; }
   .card-actions__buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .card-actions__buttons .btn-secondary { min-height: 44px; padding: 10px 8px; }
@@ -627,6 +633,7 @@ table.cf tr.r-cat td.col-label      { font-size: 10px; font-weight: 700; text-tr
 }
 
 .actuals-month-field { max-width: 280px; margin-bottom: 14px; }
+.cashflow-month-field { display: none; max-width: 100%; }
 .actuals-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -727,6 +734,31 @@ canvas { max-width: 100%; }
   .actual-entry-form > .actual-submit { min-height: 44px; }
   .theme-toggle { width: 44px; min-width: 44px; height: 44px; flex: 0 0 44px; }
   .hdr-r .btn-sm { min-height: 44px; }
+  .tabs { position: static; flex-wrap: wrap; overflow: visible; padding: 0 6px; }
+  .tab { flex: 1 1 30%; min-width: 0; padding: 10px 4px; white-space: normal; font-size: 10px; line-height: 1.25; }
+  .cash-risk__table { min-width: 0; display: block; }
+  .cash-risk__table-wrap { overflow: visible; }
+  .cash-risk__table thead { display: none; }
+  .cash-risk__table tbody { display: grid; gap: 8px; }
+  .cash-risk__table tr { display: grid; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .cash-risk__table td { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; text-align: right; overflow-wrap: anywhere; }
+  .cash-risk__table td::before { content: attr(data-label); flex: 0 0 42%; color: var(--fg2); font-size: 10px; font-weight: 700; text-align: left; }
+  .cash-risk__table td.cash-risk__obligations { display: block; text-align: left; }
+  .cash-risk__table td.cash-risk__obligations::before { display: block; margin-bottom: 4px; }
+  .cashflow-month-field { display: flex; margin-top: 14px; }
+  .tbl-wrap { overflow: visible; }
+  table.cf { min-width: 0; width: 100%; table-layout: fixed; }
+  table.cf th, table.cf td { padding: 8px 7px; white-space: normal; overflow-wrap: anywhere; }
+  table.cf th.col-label { position: static; min-width: 0; width: 62%; }
+  table.cf td.col-label { position: static; width: 62%; }
+  table.cf tr.r-cat td.col-label { font-size: 9px; }
+  .actuals-comparison-wrap { overflow: visible; box-shadow: none; }
+  .actuals-table { min-width: 0; display: block; }
+  .actuals-table thead { display: none; }
+  .actuals-table tbody { display: grid; gap: 8px; }
+  .actuals-table tr { display: grid; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--grey-xl); }
+  .actuals-table td { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; white-space: normal; overflow-wrap: anywhere; text-align: right; }
+  .actuals-table td::before { content: attr(data-label); flex: 0 0 38%; color: var(--fg2); font-size: 10px; font-weight: 700; text-align: left; }
 }
 
 @media (max-width: 360px) {

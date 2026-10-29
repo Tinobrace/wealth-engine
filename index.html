@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Wealth Engine fictional demo dashboard for exploring income, debt, and savings plans.">
+  <meta name="description" content="Create and manage your private Wealth Engine financial plan.">
   <meta name="theme-color" content="#1A252F">
-  <title>Wealth Engine — Sample Plan</title>
+  <title>Wealth Engine — Sign in</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
   <!-- Fonts (Google Fonts CDN) -->
@@ -18,17 +18,17 @@
   <!-- Chart.js (pinned version — do not change without testing) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
-<body>
+<body class="auth-required">
 
 <!-- ── HEADER ─────────────────────────────────────────── -->
 <header class="hdr">
   <div class="hdr-bar"></div>
   <div>
     <div class="hdr-t">Wealth Engine</div>
-    <div class="hdr-s" id="forecast-subtitle">Illustrative sample plan · 5-year forecast</div>
+    <div class="hdr-s" id="forecast-subtitle">Sign in to create your private plan</div>
   </div>
   <div class="hdr-r">
-    <span id="account-status" class="account-status">Sample-only demo</span>
+    <span id="account-status" class="account-status">Sign in required</span>
     <button id="account-open" class="btn-sm" type="button">Sign in</button>
     <button id="account-sign-out" class="btn-sm" type="button" hidden>Sign out</button>
     <button id="theme-toggle" class="btn-sm theme-toggle" type="button" aria-label="Switch color theme" aria-pressed="false"></button>
@@ -41,7 +41,7 @@
       <h2 id="account-dialog-title">Your private plan</h2>
       <button id="account-close" class="account-close" type="button" aria-label="Close sign-in">×</button>
     </div>
-    <p class="inp-note">Sign in to save your plan, actuals, debts, and savings goals privately to your account. The sample demo remains read-only.</p>
+    <p class="inp-note">Sign in or create an account to access your private financial plan.</p>
     <div class="field">
       <label for="account-email">Email</label>
       <input id="account-email" class="text-input" type="email" autocomplete="email" required maxlength="254">
@@ -79,11 +79,16 @@
   </div>
 </div>
 <p class="privacy-notice" role="note">
-  <strong id="privacy-notice-title">Read-only sample demo:</strong> All displayed names and financial figures are fictional. To create and save your own private plan, sign in. Sample data is separate from account data.
+  <strong id="privacy-notice-title">Private account:</strong> Your plan, actuals, debts, and savings goals are saved to your account.
 </p>
 
 <!-- ── MAIN CONTENT ───────────────────────────────────── -->
 <main class="page">
+  <section id="login-gate" class="account-empty-state" aria-labelledby="login-gate-title">
+    <h2 id="login-gate-title">Your private plan starts here</h2>
+    <p>Sign in or create an account to view your dashboard and enter your financial details. Your plan is private to your account.</p>
+    <button id="login-gate-open" class="btn-secondary" type="button">Sign in or create account</button>
+  </section>
 
   <!-- OVERVIEW TAB -->
   <section class="panel on" id="tab-overview" role="tabpanel" aria-labelledby="tab-button-overview" tabindex="0">
@@ -114,6 +119,10 @@
       <div class="card-head"><div class="card-head-icon"></div>Category visibility</div>
       <div class="card-body">
         <div id="cashflow-filters" class="category-filters"></div>
+        <div class="field cashflow-month-field">
+          <label for="cashflow-month">Forecast month</label>
+          <select id="cashflow-month" class="select-input"></select>
+        </div>
       </div>
     </div>
     <div class="tbl-wrap">
@@ -190,10 +199,10 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-head"><div class="card-head-icon"></div><span id="debt-chart-title">Sample Loan Balance Paydown · 5-year forecast</span></div>
+      <div class="card-head"><div class="card-head-icon"></div><span id="debt-chart-title">Private debt tracking</span></div>
       <div class="card-body">
         <p id="debt-chart-empty-state" class="account-feature-empty" hidden>Add a private debt to see its estimated balance over time. Interest and payments are estimates; verify lender terms.</p>
-        <canvas id="chart-debts" height="200" role="img" aria-label="Line chart of projected sample Loan A and Loan B balances by month"></canvas>
+        <canvas id="chart-debts" height="200" role="img" aria-label="Line chart of projected private debt balances by month"></canvas>
       </div>
     </div>
   </section>
@@ -216,7 +225,7 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-head"><div class="card-head-icon"></div><span id="savings-chart-title">Savings Accumulation · Sample Goals</span></div>
+      <div class="card-head"><div class="card-head-icon"></div><span id="savings-chart-title">Private savings tracking</span></div>
       <div class="card-body">
         <p id="savings-chart-empty-state" class="account-feature-empty" hidden>Add a private savings goal to see projected contributions.</p>
         <canvas id="chart-savings" height="200" role="img" aria-label="Line chart of monthly and combined savings accumulation"></canvas>
@@ -230,6 +239,21 @@
       <div class="card-head"><div class="card-head-icon"></div>Plan controls</div>
       <div class="card-body">
         <div class="scenario-grid">
+          <div class="field">
+            <label for="forecast-years">Forecast duration</label>
+            <select id="forecast-years" class="select-input">
+              <option value="1">1 year</option>
+              <option value="2">2 years</option>
+              <option value="3">3 years</option>
+              <option value="4">4 years</option>
+              <option value="5" selected>5 years</option>
+              <option value="6">6 years</option>
+              <option value="7">7 years</option>
+              <option value="8">8 years</option>
+              <option value="9">9 years</option>
+              <option value="10">10 years</option>
+            </select>
+          </div>
           <div class="field">
             <label>Saved scenario</label>
             <select id="scenario-select" class="select-input"></select>
@@ -324,7 +348,7 @@
       </div>
       <div class="card-body">
         <div class="card-actions">
-          <p class="inp-note">The forecast spans five years from the current month. Salary and fixed expenses repeat monthly; variable amounts apply only to the months entered, and blank future months are treated as zero. Edit amounts by month and set the usual payment day.</p>
+          <p class="inp-note">The forecast spans the selected number of years from the current month. Salary and fixed expenses repeat monthly; variable amounts apply only to the months entered, and blank future months are treated as zero. Edit amounts by month and set the usual payment day.</p>
         </div>
         <div id="var-inputs"></div>
       </div>

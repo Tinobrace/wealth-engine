@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Wealth Engine — Data Schema",
-  "description": "Documents the shape of all configurable data in js/data.js. Not loaded at runtime — reference only for IDE autocompletion / validation.",
+  "description": "Reference documentation for the illustrative fixture data in js/data.js. It is not loaded at runtime and does not validate signed-in account data.",
 
   "definitions": {
 
@@ -20,8 +20,9 @@
 
     "MonthlyArray": {
       "type": "array",
+      "maxItems": 120,
       "items": { "$ref": "#/definitions/NairaAmount" },
-      "description": "One value per plan month (length must equal MONTHS.length). 0 = no payment that month."
+      "description": "Month-specific schedule with up to 120 entries (the ten-year maximum). The selected forecast uses only its first 12 to 120 entries; missing entries are treated as zero. 0 = no payment that month."
     },
 
     "Income": {
@@ -125,13 +126,13 @@
 
   "type": "object",
   "properties": {
-    "FORECAST_YEARS": { "type": "integer", "minimum": 1, "description": "Number of years in the rolling forecast horizon." },
-    "MONTHS":       { "type": "array",  "items": { "$ref": "#/definitions/MonthLabel" }, "description": "Ordered month labels generated from the current month and forecast horizon." },
+    "FORECAST_YEARS": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5, "description": "Default number of years in the rolling forecast. Signed-in users can choose 1–10 years; each account's selected horizon is stored with its plan." },
+    "MONTHS":       { "type": "array",  "items": { "$ref": "#/definitions/MonthLabel" }, "description": "Ordered month labels generated from the current month and selected forecast horizon." },
     "NM":           { "type": "integer","description": "Derived from MONTHS.length. Do not edit manually." },
     "INCOME":       { "$ref": "#/definitions/Income" },
     "OPENING_BALANCE": {
       "type": "number",
-      "description": "Illustrative available cash at the start of the first forecast month; may be negative if already overdrawn."
+      "description": "Illustrative fixture value for available cash at the start of the first forecast month; may be negative if already overdrawn."
     },
     "PAYDAY": {
       "type": "integer",

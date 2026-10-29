@@ -11,23 +11,19 @@
  */
 
 import {
-  MONTHS, NM, FORECAST_YEARS, INCOME, FIXED_DEF, VARIABLE, OPENING_BALANCE, PAYDAY,
+  MONTHS as DEFAULT_MONTHS, NM as DEFAULT_NM, FORECAST_YEARS, INCOME, FIXED_DEF, VARIABLE, OPENING_BALANCE, PAYDAY,
   FIXED_DUE_DAYS, VARIABLE_DUE_DAYS,
   DEBTS, SAVINGS_GOALS, BRAND,
 } from './data.js';
 
-const DEFAULT_INCOME = { ...INCOME };
+const MAX_FORECAST_YEARS = 10;
+const MAX_NM = MAX_FORECAST_YEARS * 12;
+let forecastYears = FORECAST_YEARS;
+let MONTHS = [...DEFAULT_MONTHS];
+let NM = DEFAULT_NM;
 const DEFAULT_FIXED = Object.fromEntries(
   Object.entries(FIXED_DEF).map(([key, [label, amount]]) => [key, [label, amount]])
 );
-const DEFAULT_VARIABLE = Object.fromEntries(
-  Object.entries(VARIABLE).map(([key, values]) => [key, Array.from({ length: NM }, (_, index) => Number(values[index]) || 0)])
-);
-Object.keys(VARIABLE).forEach((key) => {
-  VARIABLE[key] = Array.from({ length: NM }, (_, index) => Number(VARIABLE[key][index]) || 0);
-});
-const DEFAULT_FIXED_DUE_DAYS = { ...FIXED_DUE_DAYS };
-const DEFAULT_VARIABLE_DUE_DAYS = { ...VARIABLE_DUE_DAYS };
 let openingBalance = OPENING_BALANCE;
 let payday = PAYDAY;
 let fixedDueDays = { ...FIXED_DUE_DAYS };
@@ -38,9 +34,8 @@ const API_BASE = String(window.WEALTH_ENGINE_API_BASE || '/api').replace(/\/+$/,
 const ACCOUNT_DATA_URL = `${API_BASE}/account/data`;
 let isAccountMode = false;
 let accountSession = null;
+let accountUser = null;
 let accountData = { plan: null, scenarios: {}, actuals: [], debts: [], savings_goals: [] };
-let demoScenarios = null;
-let demoActuals = [];
 let accountSaveTimer;
 let accountSaveQueue = Promise.resolve();
 let suppressPlanSave = false;
@@ -48,6 +43,35 @@ const CATEGORY_ORDER = [
   'loan_bundle', 'short_term_loan', 'savings_goal_1', 'savings_goal_2',
   'community_pool', 'family_support', 'home_project',
 ];
+const makeForecastMonths = years => {
+  const startMonth = new Date();
+  return Array.from({ length: years * 12 }, (_, index) => {
+    const date = new Date(startMonth.getFullYear(), startMonth.getMonth() + index, 1);
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  });
+};
+const populateCashflowMonthSelect = () => {
+  const select = document.getElementById('cashflow-month');
+  if (!select) return;
+  const previousIndex = Number(select.value);
+  const selectedIndex = Number.isInteger(previousIndex)
+    ? Math.min(Math.max(previousIndex, 0), MONTHS.length - 1)
+    : 0;
+  select.innerHTML = MONTHS.map((month, index) =>
+    `<option value="${index}">${month}</option>`
+  ).join('');
+  select.value = String(selectedIndex);
+};
+const setForecastDuration = years => {
+  if (!Number.isInteger(years) || years < 1 || years > MAX_FORECAST_YEARS) return false;
+  forecastYears = years;
+  MONTHS = makeForecastMonths(forecastYears);
+  NM = MONTHS.length;
+  const select = document.getElementById('forecast-years');
+  if (select) select.value = String(forecastYears);
+  populateCashflowMonthSelect();
+  return true;
+};
 const MANAGED_DEBT_PREFIX = 'private_debt_';
 const MANAGED_SAVINGS_PREFIX = 'private_savings_';
 const isManagedExpenseKey = key => key.startsWith(MANAGED_DEBT_PREFIX) || key.startsWith(MANAGED_SAVINGS_PREFIX);
@@ -55,7 +79,7 @@ const makeDebtProjection = debt => {
   let balance = debt.balance;
   const payments = [];
   const balances = [];
-  for (let month = 0; month < NM; month++) {
+  for (let month = 0; month < MAX_NM; month++) {
     balances.push(Math.round(balance));
     const due = balance + balance * debt.annual_interest_rate / 100 / 12;
     const payment = Math.min(debt.monthly_payment, Math.ceil(due));
@@ -66,7 +90,7 @@ const makeDebtProjection = debt => {
 };
 const makeSavingsSchedule = goal => {
   let remaining = Math.max(0, goal.target_amount - goal.saved_amount);
-  return Array.from({ length: NM }, () => {
+  return Array.from({ length: MAX_NM }, () => {
     const contribution = Math.min(goal.monthly_contribution, remaining);
     remaining -= contribution;
     return contribution;
@@ -99,75 +123,13 @@ const getScheduleStartMonth = () => {
 };
 const alignVariableSchedule = (values, storedStartMonth) => {
   const match = /^(\d{4})-(\d{2})$/.exec(storedStartMonth || '');
-  if (!match) return Array.from({ length: NM }, (_, index) => Number(values[index]) || 0);
+  if (!match) return Array.from({ length: MAX_NM }, (_, index) => Number(values[index]) || 0);
   const now = new Date();
   const currentIndex = now.getFullYear() * 12 + now.getMonth();
   const savedIndex = Number(match[1]) * 12 + Number(match[2]) - 1;
   const elapsedMonths = currentIndex - savedIndex;
-  return Array.from({ length: NM }, (_, index) => Number(values[index + elapsedMonths]) || 0);
+  return Array.from({ length: MAX_NM }, (_, index) => Number(values[index + elapsedMonths]) || 0);
 };
-const buildScenarioList = (current) => {
-  const rentFocus = {
-    income: { ...current.income },
-    fixed: { ...current.fixed },
-    variable: Object.fromEntries(Object.entries(current.variable).map(([key, values]) => [key, [...values]])),
-    openingBalance: current.openingBalance,
-    payday: current.payday,
-    scheduleStartMonth: current.scheduleStartMonth,
-    fixedDueDays: { ...current.fixedDueDays },
-    variableDueDays: { ...current.variableDueDays },
-  };
-  const rentTarget = SAVINGS_GOALS.find(goal => goal.key === '__rent__')?.target || 0;
-  const rentSaved = (rentFocus.variable.savings_goal_1 || []).reduce((sum, value) => sum + value, 0)
-    + (rentFocus.variable.savings_goal_2 || []).reduce((sum, value) => sum + value, 0);
-  const rentMonths = (rentFocus.variable.savings_goal_2 || [])
-    .map((value, index) => value > 0 ? index : -1)
-    .filter(index => index >= 0);
-  if (rentMonths.length && rentSaved < rentTarget) {
-    const gap = rentTarget - rentSaved;
-    rentMonths.forEach((month, index) => {
-      rentFocus.variable.savings_goal_2[month] += Math.floor(gap / rentMonths.length)
-        + (index < gap % rentMonths.length ? 1 : 0);
-    });
-  }
-
-  const debtFocus = {
-    income: { ...current.income },
-    fixed: { ...current.fixed },
-    variable: Object.fromEntries(Object.entries(current.variable).map(([key, values]) => [key, [...values]])),
-    openingBalance: current.openingBalance,
-    payday: current.payday,
-    scheduleStartMonth: current.scheduleStartMonth,
-    fixedDueDays: { ...current.fixedDueDays },
-    variableDueDays: { ...current.variableDueDays },
-  };
-  for (let month = 0; month < NM; month++) {
-    const redirectedSavings = (debtFocus.variable.savings_goal_1?.[month] || 0)
-      + (debtFocus.variable.savings_goal_2?.[month] || 0);
-    if (redirectedSavings > 0 && debtFocus.variable.loan_bundle) {
-      debtFocus.variable.loan_bundle[month] += redirectedSavings;
-      if (debtFocus.variable.savings_goal_1) debtFocus.variable.savings_goal_1[month] = 0;
-      if (debtFocus.variable.savings_goal_2) debtFocus.variable.savings_goal_2[month] = 0;
-    }
-  }
-
-  return {
-    Current: current,
-    'Rent focus': rentFocus,
-    'Aggressive debt payoff': debtFocus,
-  };
-};
-const getDefaultScenarioList = () => buildScenarioList({
-  income: { salary: DEFAULT_INCOME.salary, cola: DEFAULT_INCOME.cola },
-  fixed: Object.fromEntries(Object.entries(DEFAULT_FIXED).map(([key, [, amount]]) => [key, amount])),
-  variable: Object.fromEntries(Object.entries(DEFAULT_VARIABLE).map(([key, values]) => [key, [...values]])),
-  openingBalance: OPENING_BALANCE,
-  payday: PAYDAY,
-  scheduleStartMonth: getScheduleStartMonth(),
-  fixedDueDays: { ...DEFAULT_FIXED_DUE_DAYS },
-  variableDueDays: { ...DEFAULT_VARIABLE_DUE_DAYS },
-});
-
 // ── CHART REGISTRY (for clean re-renders) ──────────────────
 const CHARTS = {};
 const THEME_KEY = 'wealth-engine-theme';
@@ -263,7 +225,7 @@ const requestApi = async (path, { method = 'GET', body, authenticate = true } = 
     const detail = payload?.detail || payload?.msg || payload?.message;
     if (response.status === 401 && authenticate) {
       clearSession();
-      if (isAccountMode) activateDemo();
+      if (isAccountMode) lockAccountView();
     }
     if (response.status === 404 && !detail) {
       throw new Error('The account API is not running on this address. Start the app with `npx vercel dev`; a static Live Server cannot sign in.');
@@ -473,6 +435,7 @@ const compute = () => {
 // ── MASTER RECOMPUTE (called on every input change) ────────
 const getCurrentPlanData = () => {
   const plan = {
+    forecastYears,
     income: { salary: getSalary(), cola: getCola() },
     fixed: getFixed(),
     variable: {},
@@ -491,10 +454,11 @@ const getCurrentPlanData = () => {
 
 const saveCurrentPlan = (notify = false) => {
   if (!isAccountMode) {
-    if (notify) showToast('Sign in to save a private plan. The sample demo is read-only.', true);
+    if (notify) showToast('Sign in to save a private plan.', true);
     return false;
   }
   accountData.plan = getCurrentPlanData();
+  if (accountData.scenarios.Current) accountData.scenarios.Current = accountData.plan;
   if (notify) {
     clearTimeout(accountSaveTimer);
     persistAccountData()
@@ -509,11 +473,19 @@ const saveCurrentPlan = (notify = false) => {
 const loadSavedPlan = (saved) => {
   try {
     if (!saved || typeof saved !== 'object') return false;
+    const savedForecastYears = Number(saved.forecastYears);
+    const hasSavedForecastYears = saved.forecastYears !== undefined && saved.forecastYears !== null;
+    const validForecastYears = Number.isInteger(savedForecastYears)
+      && savedForecastYears >= 1 && savedForecastYears <= MAX_FORECAST_YEARS;
+    if (hasSavedForecastYears && !validForecastYears) {
+      showToast('The saved forecast duration is invalid; using the five-year default.', true);
+    }
+    setForecastDuration(validForecastYears ? savedForecastYears : FORECAST_YEARS);
 
     Object.keys(saved.variable || {}).forEach((key) => {
       if (!/^[a-zA-Z0-9_]{1,48}$/.test(key)) return;
       if (!Object.prototype.hasOwnProperty.call(VARIABLE, key)) {
-        VARIABLE[key] = Array(NM).fill(0);
+        VARIABLE[key] = Array(MAX_NM).fill(0);
         if (!isManagedExpenseKey(key)) {
           const label = key.replace(/_/g, ' ');
           FIXED_DEF[key] = [label, 0];
@@ -740,7 +712,7 @@ const formatMonthKey = monthKey => {
   return new Date(year, month - 1, 1).toLocaleDateString('en-NG', { month: 'long', year: 'numeric' });
 };
 const readActualEntries = () => {
-  const entries = isAccountMode ? accountData.actuals : demoActuals;
+  const entries = isAccountMode ? accountData.actuals : [];
   if (!Array.isArray(entries)) {
     showToast('Saved actuals are invalid. Please reload your account data.', true);
     return [];
@@ -755,7 +727,7 @@ const readActualEntries = () => {
 };
 const writeActualEntries = entries => {
   if (!isAccountMode) {
-    showToast('Sign in to record actuals. The sample demo is read-only.', true);
+    showToast('Sign in to record actual transactions.', true);
     return false;
   }
   accountData.actuals = entries;
@@ -862,7 +834,7 @@ const renderActuals = () => {
         const variance = actual - category.amount;
         const adverse = category.type === 'expense' ? variance > 0 : variance < 0;
         const favorable = category.type === 'expense' ? variance < 0 : variance > 0;
-        return `<tr><td>${escapeHtml(category.label)}</td><td>${planRow ? fmt(category.amount) : '—'}</td><td>${fmt(actual)}</td><td class="${adverse ? 'cv-neg' : favorable ? 'cv-pos' : ''}">${planRow ? `${variance > 0 ? '+' : ''}${fmt(variance)}` : '—'}</td></tr>`;
+        return `<tr><td data-label="Category">${escapeHtml(category.label)}</td><td data-label="Plan">${planRow ? fmt(category.amount) : '—'}</td><td data-label="Actual so far">${fmt(actual)}</td><td data-label="Difference" class="${adverse ? 'cv-neg' : favorable ? 'cv-pos' : ''}">${planRow ? `${variance > 0 ? '+' : ''}${fmt(variance)}` : '—'}</td></tr>`;
       }).join('')
     }</tbody>`;
   }
@@ -896,7 +868,7 @@ const renderActuals = () => {
 const addActualEntry = event => {
   event.preventDefault();
   if (!isAccountMode) {
-    showToast('Sign in to record actuals. The sample demo is read-only.', true);
+    showToast('Sign in to record actuals.', true);
     return;
   }
   const date = document.getElementById('actual-date')?.value;
@@ -936,12 +908,12 @@ const getScenarioStore = () => {
     if (Object.keys(accountData.scenarios).length) return accountData.scenarios;
     return { Current: accountData.plan || getCurrentPlanData() };
   }
-  return demoScenarios || getDefaultScenarioList();
+  return {};
 };
 
 const saveScenarioStore = (scenarios) => {
   if (!isAccountMode) {
-    showToast('Sign in to save scenarios. The sample demo is read-only.', true);
+    showToast('Sign in to save scenarios.', true);
     return false;
   }
   accountData.scenarios = scenarios;
@@ -953,6 +925,14 @@ const applyScenario = (name) => {
   const scenarios = getScenarioStore();
   const scenario = scenarios[name];
   if (!scenario) return false;
+  if (scenario.forecastYears !== undefined && scenario.forecastYears !== null) {
+    const scenarioYears = Number(scenario.forecastYears);
+    if (!Number.isInteger(scenarioYears) || scenarioYears < 1 || scenarioYears > MAX_FORECAST_YEARS) {
+      showToast('This scenario has an invalid forecast duration and cannot be applied.', true);
+      return false;
+    }
+    setForecastDuration(scenarioYears);
+  }
   if (Number.isFinite(Number(scenario.openingBalance))) openingBalance = Number(scenario.openingBalance);
   if (Number.isInteger(Number(scenario.payday))) payday = Math.min(31, Math.max(1, Number(scenario.payday)));
   if (scenario.fixedDueDays && typeof scenario.fixedDueDays === 'object') {
@@ -992,12 +972,13 @@ const applyScenario = (name) => {
 
 const saveCurrentScenario = () => {
   if (!isAccountMode) {
-    showToast('Sign in to save scenarios. The sample demo is read-only.', true);
+    showToast('Sign in to save scenarios.', true);
     return;
   }
   const name = document.getElementById('new-scenario-name')?.value?.trim() || document.getElementById('scenario-select')?.value || 'Current';
   const scenarios = getScenarioStore();
   scenarios[name] = {
+    forecastYears,
     income: { salary: getSalary(), cola: getCola() },
     fixed: { ...getFixed() },
     variable: Object.fromEntries(Object.entries(VARIABLE).map(([key, values]) => [key, [...values]])),
@@ -1035,7 +1016,7 @@ const populateScenarioControls = () => {
 
 const addCategory = () => {
   if (!isAccountMode) {
-    showToast('Sign in to edit categories. The sample demo is read-only.', true);
+    showToast('Sign in to edit categories.', true);
     return;
   }
   const nameInput = document.getElementById('new-category-name');
@@ -1048,7 +1029,7 @@ const addCategory = () => {
     alert('This category already exists.');
     return;
   }
-  VARIABLE[name] = Array(NM).fill(0);
+  VARIABLE[name] = Array(MAX_NM).fill(0);
   FIXED_DEF[name] = [name.replace(/_/g, ' '), 0];
   if (nameInput) nameInput.value = '';
   populateScenarioControls();
@@ -1060,7 +1041,7 @@ const addCategory = () => {
 
 const removeCategory = () => {
   if (!isAccountMode) {
-    showToast('Sign in to edit categories. The sample demo is read-only.', true);
+    showToast('Sign in to edit categories.', true);
     return;
   }
   const select = document.getElementById('category-select');
@@ -1089,6 +1070,10 @@ const hasPrivatePlanInputs = () => getSalary() > 0
   || Object.values(VARIABLE).some(values => values.some(amount => amount > 0));
 
 export const recompute = ({ persist = true } = {}) => {
+  if (!isAccountMode) {
+    Object.keys(CHARTS).forEach(destroyChart);
+    return;
+  }
   const rows = compute();
   const emptyAccountPlan = isAccountMode && !hasPrivatePlanInputs();
   document.body.classList.toggle('account-plan-empty', emptyAccountPlan);
@@ -1158,10 +1143,10 @@ const renderCashRisk = (rows) => {
       .map(event => `${escapeHtml(event.label)} (${fmtK(Math.abs(event.amount))})`)
       .join(', ');
     return `<tr>
-      <td>${escapeHtml(row.month)}</td>
-      <td>${fmtDate(row.minDate)}</td>
-      <td>${fmtK(row.minBalance)}</td>
-      <td class="cash-risk__obligations">${obligations || 'No scheduled expense identified before this point'}</td>
+      <td data-label="Month">${escapeHtml(row.month)}</td>
+      <td data-label="Lowest point">${fmtDate(row.minDate)}</td>
+      <td data-label="Balance">${fmtK(row.minBalance)}</td>
+      <td data-label="Largest scheduled outflows" class="cash-risk__obligations">${obligations || 'No scheduled expense identified before this point'}</td>
     </tr>`;
   }).join('');
 
@@ -1384,24 +1369,33 @@ const renderCFTable = (rows) => {
   const tbl = document.getElementById('cf-table');
   if (!tbl) return;
   const hidden = getHiddenCashflowCategories();
+  const narrowScreen = window.matchMedia('(max-width: 640px)').matches;
+  const monthSelect = document.getElementById('cashflow-month');
+  const selectedMonth = Number(monthSelect?.value);
+  const visibleIndexes = narrowScreen
+    ? [Number.isInteger(selectedMonth) ? Math.min(Math.max(selectedMonth, 0), MONTHS.length - 1) : 0]
+    : MONTHS.map((_, index) => index);
 
   const row = (label, vals, cls = '', colCls = null) => {
-    const cells = vals.map(v => `<td class="${colCls ? colCls(v) : ''}">${fmt(v)}</td>`).join('');
+    const cells = visibleIndexes.map(index => {
+      const value = vals[index];
+      return `<td class="${colCls ? colCls(value) : ''}">${fmt(value)}</td>`;
+    }).join('');
     return `<tr class="${cls}"><td class="col-label">${label}</td>${cells}</tr>`;
   };
   const cat = (label) =>
-    `<tr class="r-cat"><td class="col-label">${label}</td>${MONTHS.map(() => '<td></td>').join('')}</tr>`;
+    `<tr class="r-cat"><td class="col-label">${label}</td>${visibleIndexes.map(() => '<td></td>').join('')}</tr>`;
 
   let h = `<thead><tr>
     <th class="col-label">Category</th>
-    ${MONTHS.map(m => `<th>${m}</th>`).join('')}
+    ${visibleIndexes.map(index => `<th>${narrowScreen ? 'Amount' : MONTHS[index]}</th>`).join('')}
   </tr></thead><tbody>`;
 
   h += row('📥 Total Income', rows.map(r => r.income), 'r-income');
 
   if (isAccountMode) {
     if (!hasPrivatePlanInputs()) {
-      h += `<tr><td class="col-label" colspan="${MONTHS.length + 1}">Add your own income and expenses in Edit Inputs to build your private cash-flow forecast.</td></tr>`;
+      h += `<tr><td class="col-label" colspan="${visibleIndexes.length + 1}">Add your own income and expenses in Edit Inputs to build your private cash-flow forecast.</td></tr>`;
     } else {
       Object.keys(VARIABLE).forEach((key) => {
         if (!hidden.has(key)) {
@@ -1811,12 +1805,12 @@ const renderSavings = (rows) => {
     }
     el.innerHTML = accountData.savings_goals.map((goal) => {
       const currentPct = Math.min(100, goal.saved_amount / goal.target_amount * 100);
-      const projected = goal.saved_amount + makeSavingsSchedule(goal).reduce((sum, amount) => sum + amount, 0);
+      const projected = goal.saved_amount + makeSavingsSchedule(goal).slice(0, NM).reduce((sum, amount) => sum + amount, 0);
       const projectedPct = Math.min(100, projected / goal.target_amount * 100);
       return `
         <article class="private-record">
           <h3>${escapeHtml(goal.name)}</h3>
-          <p class="private-record-meta">Target: ${fmt(goal.target_amount)} · Current savings: ${fmt(goal.saved_amount)} · Projected in ${FORECAST_YEARS} years: ${fmt(projected)} · ${fmt(goal.monthly_contribution)} monthly contribution · day ${goal.contribution_day}</p>
+          <p class="private-record-meta">Target: ${fmt(goal.target_amount)} · Current savings: ${fmt(goal.saved_amount)} · Projected in ${forecastYears} years: ${fmt(projected)} · ${fmt(goal.monthly_contribution)} monthly contribution · day ${goal.contribution_day}</p>
           <div class="pbar"><div class="pfill" style="width:${currentPct.toFixed(1)}%"></div></div>
           <div class="plabels"><span>${currentPct.toFixed(0)}% saved</span><span>${projectedPct >= 100 ? 'Target projected within forecast' : `${fmt(Math.max(0, goal.target_amount - projected))} remaining in forecast`}</span></div>
           <form class="private-record-form" data-savings-form="${escapeHtml(goal.id)}">
@@ -1999,26 +1993,6 @@ const renderVariableInputs = (container) => {
 };
 
 // ── FIXED INPUTS INIT ──────────────────────────────────────
-const restoreSampleInputs = () => {
-  Object.keys(DEFAULT_INCOME).forEach((key) => {
-    INCOME[key] = DEFAULT_INCOME[key];
-  });
-  Object.keys(DEFAULT_FIXED).forEach((key) => {
-    FIXED_DEF[key] = [...DEFAULT_FIXED[key]];
-  });
-  Object.keys(DEFAULT_VARIABLE).forEach((key) => {
-    VARIABLE[key] = [...DEFAULT_VARIABLE[key]];
-  });
-  openingBalance = OPENING_BALANCE;
-  payday = PAYDAY;
-  fixedDueDays = { ...DEFAULT_FIXED_DUE_DAYS };
-  variableDueDays = { ...DEFAULT_VARIABLE_DUE_DAYS };
-
-  initInputs();
-  renderCashflowFilters();
-  recompute({ notify: false });
-};
-
 const restoreDefaultInputs = () => {
   if (isAccountMode) {
     if ((accountData.debts.length || accountData.savings_goals.length)
@@ -2034,7 +2008,7 @@ const restoreDefaultInputs = () => {
     showToast('Private plan cleared. Enter your own figures.');
     return;
   }
-  restoreSampleInputs();
+  showToast('Sign in before resetting a private plan.', true);
 };
 
 const initInputs = () => {
@@ -2089,25 +2063,26 @@ const updateAccountControls = user => {
   const notice = document.querySelector('.privacy-notice');
   const debtFormCard = document.getElementById('private-debt-form-card');
   const savingsFormCard = document.getElementById('private-savings-form-card');
-  document.title = signedIn ? 'Wealth Engine — Private Plan' : 'Wealth Engine — Sample Plan';
+  document.body.classList.toggle('auth-required', !signedIn);
+  document.title = signedIn ? 'Wealth Engine — Private Plan' : 'Wealth Engine — Sign in';
   document.getElementById('forecast-subtitle').textContent =
-    `${signedIn ? 'Private account plan' : 'Illustrative sample plan'} · ${FORECAST_YEARS}-year forecast · ${MONTHS[0]} – ${MONTHS.at(-1)}`;
-  document.getElementById('debt-chart-title').textContent = signedIn
-    ? 'Private debt tracking'
-    : `Sample Loan Balance Paydown · ${FORECAST_YEARS}-year forecast`;
-  document.getElementById('savings-chart-title').textContent = signedIn
-    ? 'Private savings tracking'
-    : 'Savings Accumulation · Sample Goals';
+    signedIn
+      ? `Private account plan · ${forecastYears}-year forecast · ${MONTHS[0]} – ${MONTHS.at(-1)}`
+      : 'Sign in to create your private plan';
+  document.getElementById('debt-chart-title').textContent = 'Private debt tracking';
+  document.getElementById('savings-chart-title').textContent = 'Private savings tracking';
   document.getElementById('chart-debts')?.setAttribute(
     'aria-label',
-    signedIn ? 'Line chart of projected private debt balances by month' : 'Line chart of projected sample Loan A and Loan B balances by month',
+    'Line chart of projected private debt balances by month',
   );
   document.getElementById('chart-savings')?.setAttribute(
     'aria-label',
-    signedIn ? 'Line chart of projected private savings goal balances by month' : 'Line chart of monthly and combined savings accumulation',
+    'Line chart of projected private savings goal balances by month',
   );
-  if (status) status.textContent = signedIn ? user.email || 'Private account' : 'Sample-only demo';
+  if (status) status.textContent = signedIn ? user.email || 'Private account' : 'Sign in required';
   if (openButton) openButton.hidden = signedIn;
+  const gateButton = document.getElementById('login-gate-open');
+  if (gateButton) gateButton.disabled = accountAvailability !== 'ready';
   if (openButton && !signedIn) {
     openButton.disabled = accountAvailability !== 'ready';
     openButton.title = accountAvailability === 'unavailable'
@@ -2119,20 +2094,17 @@ const updateAccountControls = user => {
   if (signOutButton) signOutButton.hidden = !signedIn;
   if (debtFormCard) debtFormCard.hidden = !signedIn;
   if (savingsFormCard) savingsFormCard.hidden = !signedIn;
-  if (noticeTitle) noticeTitle.textContent = signedIn ? 'Private account:' : 'Read-only sample demo:';
+  if (noticeTitle) noticeTitle.textContent = 'Private account:';
   if (notice) {
-    notice.lastChild.textContent = signedIn
-      ? ' New private plans start blank. Your plan, actuals, debts, and savings goals are saved to your account; sample data is never copied.'
-      : ' All changes are disabled until you sign in.';
+    notice.lastChild.textContent = ' Your plan, actuals, debts, and savings goals are saved to your account.';
   }
   document.querySelectorAll('#tab-inputs input, #tab-inputs select').forEach((control) => {
-    control.disabled = !signedIn && control.id !== 'scenario-select';
+    control.disabled = !signedIn;
   });
-  const readonlyDemoButtons = new Set(['apply-scenario', 'print-summary', 'export-csv', 'export-plan']);
   document.querySelectorAll('#tab-inputs button').forEach((button) => {
-    button.disabled = !signedIn && !readonlyDemoButtons.has(button.id);
+    button.disabled = !signedIn;
   });
-  document.querySelectorAll('#quick-save-plan, #quick-reset-plan').forEach((button) => {
+  document.querySelectorAll('.quickbar button').forEach((button) => {
     button.disabled = !signedIn;
   });
   document.querySelectorAll('#actual-entry-form input, #actual-entry-form select, #actual-entry-form button').forEach((control) => {
@@ -2159,11 +2131,15 @@ const checkAccountAvailability = async () => {
 };
 
 const resetPlanState = () => {
-  Object.keys(VARIABLE).filter(key => !Object.prototype.hasOwnProperty.call(DEFAULT_VARIABLE, key))
-    .forEach(key => delete VARIABLE[key]);
-  Object.keys(FIXED_DEF).filter(key => !Object.prototype.hasOwnProperty.call(DEFAULT_FIXED, key))
-    .forEach(key => delete FIXED_DEF[key]);
-  restoreSampleInputs();
+  Object.keys(VARIABLE).forEach(key => delete VARIABLE[key]);
+  Object.keys(FIXED_DEF).forEach(key => delete FIXED_DEF[key]);
+  Object.entries(DEFAULT_FIXED).forEach(([key, [label]]) => { FIXED_DEF[key] = [label, 0]; });
+  Object.keys(INCOME).forEach(key => { INCOME[key] = 0; });
+  openingBalance = 0;
+  payday = 1;
+  fixedDueDays = Object.fromEntries(Object.keys(DEFAULT_FIXED).map(key => [key, 1]));
+  variableDueDays = {};
+  setForecastDuration(FORECAST_YEARS);
 };
 
 const normalizePrivateEntries = (data) => {
@@ -2238,6 +2214,7 @@ const activateAccount = (user, data) => {
   if (!Object.keys(accountData.scenarios).length) {
     accountData.scenarios = { Current: accountData.plan };
   }
+  accountUser = user;
   initInputs();
   accountData.plan = getCurrentPlanData();
   populateScenarioControls();
@@ -2248,35 +2225,19 @@ const activateAccount = (user, data) => {
   recompute({ persist: false });
 };
 
-const activateDemo = async () => {
+const lockAccountView = () => {
   isAccountMode = false;
-  clearTimeout(accountSaveTimer);
-  resetPlanState();
+  accountUser = null;
   accountData = { plan: null, scenarios: {}, actuals: [], debts: [], savings_goals: [] };
-  try {
-    const [plan, scenarios, actuals] = await Promise.all([
-      requestApi('/demo/plan', { authenticate: false }),
-      requestApi('/demo/scenarios', { authenticate: false }),
-      requestApi('/demo/actuals', { authenticate: false }),
-    ]);
-    if (!plan || typeof plan !== 'object' || !scenarios || typeof scenarios !== 'object' || !Array.isArray(actuals)) {
-      throw new Error('The sample demo returned invalid data.');
-    }
-    if (!loadSavedPlan(plan)) throw new Error('The sample plan could not be loaded.');
-    demoScenarios = scenarios;
-    demoActuals = actuals;
-  } catch (error) {
-    demoScenarios = null;
-    demoActuals = [];
-    showToast('Sample API is unavailable. Showing built-in fictional data; account sign-in requires the API.', true);
-  }
-  initInputs();
-  populateScenarioControls();
-  populateActualCategorySelect();
-  renderCashflowFilters();
-  renderActuals();
+  clearTimeout(accountSaveTimer);
+  clearSession();
+  resetPlanState();
+  initializeBlankAccountInputs();
+  Object.keys(CHARTS).forEach(destroyChart);
+  ['plan-summary', 'cash-risk', 'kpi-grid', 'alert-row', 'insights-grid', 'cf-table',
+    'debt-list', 'savings-list', 'actuals-summary', 'actuals-comparison', 'actuals-entries']
+    .forEach(id => { const element = document.getElementById(id); if (element) element.replaceChildren(); });
   updateAccountControls(null);
-  recompute({ persist: false });
 };
 
 const restoreAccountFromSession = async () => {
@@ -2312,6 +2273,7 @@ const restoreAccountFromSession = async () => {
     return true;
   } catch (error) {
     clearSession();
+    lockAccountView();
     showToast(error.message || 'Your sign-in session could not be restored.', true);
     return false;
   }
@@ -2330,6 +2292,7 @@ const finishSignIn = async session => {
     activateAccount(user, result?.data || {});
   } catch (error) {
     clearSession();
+    lockAccountView();
     throw error;
   }
   document.getElementById('account-dialog')?.close();
@@ -2404,18 +2367,16 @@ const signOut = async () => {
   } catch (error) {
     showToast(error.message || 'Could not end the server session.', true);
   } finally {
-    clearSession();
-    await activateDemo();
+    lockAccountView();
   }
 };
 
 // ── BOOT ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  const range = `${MONTHS[0]} – ${MONTHS.at(-1)}`;
-  document.getElementById('forecast-subtitle').textContent = `Illustrative sample plan · ${FORECAST_YEARS}-year forecast · ${range}`;
-  document.getElementById('debt-chart-title').textContent = `Sample Loan Balance Paydown · ${range}`;
   applyTheme(getStoredTheme());
-  initInputs();
+  setForecastDuration(forecastYears);
+  resetPlanState();
+  initializeBlankAccountInputs();
   updateAccountControls(null);
   document.querySelectorAll('.tab').forEach((button) => {
     button.addEventListener('click', () => showTab(button.dataset.tab, button));
@@ -2439,15 +2400,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     setAccountFormStatus('');
     document.getElementById('account-dialog')?.showModal();
   });
+  document.getElementById('login-gate-open')?.addEventListener('click', () => {
+    setAccountFormStatus('');
+    document.getElementById('account-dialog')?.showModal();
+  });
   document.getElementById('account-close')?.addEventListener('click', () => {
     document.getElementById('account-dialog')?.close();
   });
   document.getElementById('account-form')?.addEventListener('submit', signIn);
   document.getElementById('account-sign-up')?.addEventListener('click', signUp);
   document.getElementById('account-sign-out')?.addEventListener('click', signOut);
+  document.getElementById('forecast-years')?.addEventListener('change', event => {
+    if (!setForecastDuration(Number(event.currentTarget.value))) {
+      showToast('Choose a forecast duration from 1 to 10 years.', true);
+      return;
+    }
+    initInputs();
+    updateAccountControls(accountUser);
+    recompute();
+    showToast(`Forecast updated to ${forecastYears} years.`);
+  });
+  document.getElementById('cashflow-month')?.addEventListener('change', () => {
+    if (isAccountMode) renderCFTable(compute());
+  });
+  window.matchMedia('(max-width: 640px)').addEventListener('change', () => {
+    if (isAccountMode) renderCFTable(compute());
+  });
   document.getElementById('reset-plan')?.addEventListener('click', () => {
     restoreDefaultInputs();
-    if (!isAccountMode) showToast('Plan reset to sample defaults.');
   });
   document.getElementById('save-plan')?.addEventListener('click', () => saveCurrentPlan(true));
   document.getElementById('export-plan')?.addEventListener('click', exportPlan);
@@ -2455,7 +2435,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('print-summary')?.addEventListener('click', printSummary);
   document.getElementById('quick-reset-plan')?.addEventListener('click', () => {
     restoreDefaultInputs();
-    if (!isAccountMode) showToast('Plan reset to sample defaults.');
   });
   document.getElementById('quick-save-plan')?.addEventListener('click', () => saveCurrentPlan(true));
   document.getElementById('quick-export-plan')?.addEventListener('click', exportPlan);
@@ -2511,14 +2490,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('add-category')?.addEventListener('click', addCategory);
   document.getElementById('remove-category')?.addEventListener('click', removeCategory);
-  await activateDemo();
   await checkAccountAvailability();
-  await restoreAccountFromSession();
-  initInputs();
-  populateActualCategorySelect();
-  renderActuals();
-  renderCashflowFilters();
-  recompute({ persist: false });
+  const restored = await restoreAccountFromSession();
+  if (!restored) lockAccountView();
 });
 
 // Expose to inline HTML event handlers
